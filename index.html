@@ -314,6 +314,71 @@ async function sendChat(){
   S.gen=false;
 }
 
+// ====== 继续中断消息 ======
+async function continueMsg(idx){
+  if(S.gen||!S.cur)return;
+  if(!S.key){toast('请先设置 API Key','warn');openSet();return}
+  var c=S.cur;
+  var target=c.messages[idx];
+  if(!target||target.role!=='assistant')return;
+  
+  S.gen=true;
+  var prefix=target.content||'';
+  target.broken=false; // 移除中断标记
+  
+  // 用历史消息（不含当前中断这条或包含它但作为prefix）
+  var msgs=c.messages.slice(0,idx).map(function(m){return {role:m.role,content:m.content}});
+  // 把已有内容作为prefix传给模型
+  msgs.push({role:'assistant',content:prefix});
+  
+  var full=prefix;
+  try{
+    var r=await fetch(API+'/chat/completions',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+S.key,'Content-Type':'application/json'},
+      body:JSON.stringify({model:S.model||c.model,messages:msgs,stream:true,max_tokens:4096,temperature:0.7})
+    });
+    if(!r.ok){var j=await r.text();try{j=JSON.parse(j);j=j.message||j.error||j}catch(eee){}throw new Error(j)}
+    
+    renderChat(true);
+    var box=$('chatBox'),lastMsg=box?box.lastElementChild:null;
+    
+    if(r.body&&r.body.getReader){
+      var reader=r.body.getReader(),dec=new TextDecoder();
+      var tick=0;
+      while(true){
+        var {done,value}=await reader.read();
+        if(done)break;
+        var chunk=dec.decode(value,{stream:true});
+        chunk.split('\n').filter(function(l){return l.startsWith('data:')&&!l.includes('[DONE]')}).forEach(function(line){
+          try{
+            var d=JSON.parse(line.slice(5));
+            var delta=d.choices[0].delta.content||'';
+            full+=delta;
+            c.messages[idx].content=full;
+            var b=lastMsg?lastMsg.querySelector('.b'):null;
+            if(b&&box){b.innerHTML=md(full);box.scrollTop=box.scrollHeight}
+            tick++;if(tick%5===0)save();
+          }catch(e){}
+        });
+      }
+    }else{
+      var d=await r.json();
+      full+=d.choices[0].message.content||'';
+      c.messages[idx].content=full;
+      save();
+    }
+    
+    if(lastMsg){var b2=lastMsg.querySelector('.b');if(b2)b2.innerHTML=md(full)}
+    save();
+    toast('✅ 已续写完成','ok');
+  }catch(e){
+    toast('❌ '+e.message,'err');
+    target.broken=true; // 恢复标记
+  }
+  S.gen=false;
+}
+
 // ====== 图片生成 ======
 async function genImg(){
   if(!S.key){toast('请先设置 API Key','warn');openSet();return}
@@ -388,11 +453,11 @@ function renderChat(scroll){
   var h=c&&c.messages.length>0?'':('<div class="empty-s"><div class="emoji">🤖</div><p style="font-size:15px;margin-bottom:2px">开始对话</p><p style="font-size:12px">当前: '+S.model.split('/').pop()+'</p></div>');
   
   if(c&&c.messages.length>0){
-    h=c.messages.map(function(m){
+    h=c.messages.map(function(m,mi){
       var role=m.role==='user'?'user':'ai';
       return '<div class="msg '+role+'"><div class="av '+(role==='user'?'user':'ai')+'">'+(role==='user'?'👤':'🤖')+'</div><div class="b">'+
         (m.model?'<div class="model-tag">'+m.model.split('/').pop()+'</div>':'')+
-        (role==='ai'?md(m.content||'')+(m.broken?' <span style="font-size:10px;color:var(--semi-color-warning)">⚠️ 已中断</span>':''):esc(m.content).replace(/\n/g,'<br>'))+'</div></div>';
+        (role==='ai'?md(m.content||'')+(m.broken?' <span style="font-size:10px;color:var(--semi-color-warning)">⚠️ 已中断</span> <span style="font-size:11px;color:var(--semi-color-primary);cursor:pointer;text-decoration:underline" onclick="continueMsg('+mi+')">▶️ 继续</span>':''):esc(m.content).replace(/\n/g,'<br>'))+'</div></div>';
     }).join('');
   }
   
