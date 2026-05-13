@@ -372,7 +372,7 @@ function copyID(el,id){
 }
 
 // ====== 设置 ======
-function tS(){$('settings').classList.add('on');$('apiKeyInput').value=API_KEY==DEFAULT_KEY?'':API_KEY;$('chatModelInput').value=CHAT_MODEL;$('apiStatus').textContent=API_KEY===DEFAULT_KEY?'⚠️ 当前使用演示Key，建议填入你自己的。若要获得Key，请访问 platform.siliconflow.cn':'✅ API Key 已配置'}
+function tS(){$('settings').classList.add('on');$('apiKeyInput').value=API_KEY==DEFAULT_KEY?'':API_KEY;$('chatModelInput').value=CHAT_MODEL;$('apiStatus').textContent=API_KEY?'🔑 已配置 API Key':'⚠️ 需要 SiliconFlow API Key，访问 platform.siliconflow.cn 注册免费获取'}
 function hS(){$('settings').classList.remove('on')}
 function saveS(){
   var k=$('apiKeyInput').value.trim();var m=$('chatModelInput').value.trim();
@@ -386,7 +386,7 @@ function saveS(){
 
 // ====== 初始化 ======
 $('modelName').textContent=CHAT_MODEL;
-if(API_KEY===DEFAULT_KEY){t('💡 设置中已预填演示Key，建议填入你自己的')}
+if(API_KEY===DEFAULT_KEY){setTimeout(function(){t('💡 点击右上角⚙️配置你的 SiliconFlow API Key');$('settings').classList.add('on')},500)}
 
 if('serviceWorker'in navigator)navigator.serviceWorker.register('web/sw.js').catch(function(){});
 </script>
