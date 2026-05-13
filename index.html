@@ -326,12 +326,12 @@ async function continueMsg(idx){
   var prefix=target.content||'';
   target.broken=false; // 移除中断标记
   
-  // 用历史消息（不含当前中断这条或包含它但作为prefix）
+  // 用历史消息（不含当前中断消息）
   var msgs=c.messages.slice(0,idx).map(function(m){return {role:m.role,content:m.content}});
-  // 把已有内容作为prefix传给模型
-  msgs.push({role:'assistant',content:prefix});
+  // 把已有内容包装成user消息，让模型续写
+  msgs.push({role:'user',content:'请继续完善以下内容（以原有风格续写，不要重复已有内容）：\n\n'+prefix});
   
-  var full=prefix;
+  var full='';
   try{
     var r=await fetch(API+'/chat/completions',{
       method:'POST',
