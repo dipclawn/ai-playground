@@ -263,6 +263,7 @@ async function sendChat(){
   var c=getC();
   var msgs=c.messages.map(function(m){return {role:m.role,content:m.content}});
   
+  var full='';
   try{
     var r=await fetch(API+'/chat/completions',{
       method:'POST',
@@ -271,31 +272,40 @@ async function sendChat(){
     });
     if(!r.ok){var j=await r.text();try{j=JSON.parse(j);j=j.message||j.error||j}catch(eee){}throw new Error(j)}
     
-    var reader=r.body.getReader(),dec=new TextDecoder(),full='';
     c.messages.push({role:'assistant',content:'',model:S.model,t:Date.now()});
     renderChat(true);
     var box=$('chatBox'),lastMsg=box?box.lastElementChild:null;
     
-    while(true){
-      var {done,value}=await reader.read();
-      if(done)break;
-      var chunk=dec.decode(value,{stream:true});
-      chunk.split('\n').filter(function(l){return l.startsWith('data:')&&!l.includes('[DONE]')}).forEach(function(line){
-        try{
-          var d=JSON.parse(line.slice(5));
-          var delta=d.choices[0].delta.content||'';
-          full+=delta;
-          c.messages[c.messages.length-1].content=full;
-          var b=lastMsg?lastMsg.querySelector('.b'):null;
-          if(b&&box){b.innerHTML=md(full)+'<span class="cursor-b"></span>';box.scrollTop=box.scrollHeight}
-        }catch(e){}
-      });
+    // 流式降级: 不支持ReadableStream时走非流式
+    if(r.body&&r.body.getReader){
+      var reader=r.body.getReader(),dec=new TextDecoder();
+      while(true){
+        var {done,value}=await reader.read();
+        if(done)break;
+        var chunk=dec.decode(value,{stream:true});
+        chunk.split('\n').filter(function(l){return l.startsWith('data:')&&!l.includes('[DONE]')}).forEach(function(line){
+          try{
+            var d=JSON.parse(line.slice(5));
+            var delta=d.choices[0].delta.content||'';
+            full+=delta;
+            c.messages[c.messages.length-1].content=full;
+            var b=lastMsg?lastMsg.querySelector('.b'):null;
+            if(b&&box){b.innerHTML=md(full)+'<span class="cursor-b"></span>';box.scrollTop=box.scrollHeight}
+          }catch(e){}
+        });
+      }
+    }else{
+      // 降级: 非流式（兼容微信等低版本浏览器）
+      var d=await r.json();
+      full=d.choices[0].message.content||'';
+      c.messages[c.messages.length-1].content=full;
     }
+    
     if(lastMsg){var b2=lastMsg.querySelector('.b');if(b2)b2.innerHTML=md(full)}
     save();
   }catch(e){
     toast('❌ '+e.message,'err');
-    S.cur.messages.pop();S.gen=false;renderChat();return;
+    if(S.cur&&S.cur.messages)S.cur.messages.pop();
   }
   S.gen=false;
 }
