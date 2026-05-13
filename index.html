@@ -279,6 +279,7 @@ async function sendChat(){
     // 流式降级: 不支持ReadableStream时走非流式
     if(r.body&&r.body.getReader){
       var reader=r.body.getReader(),dec=new TextDecoder();
+      var tick=0;
       while(true){
         var {done,value}=await reader.read();
         if(done)break;
@@ -291,6 +292,8 @@ async function sendChat(){
             c.messages[c.messages.length-1].content=full;
             var b=lastMsg?lastMsg.querySelector('.b'):null;
             if(b&&box){b.innerHTML=md(full)+'<span class="cursor-b"></span>';box.scrollTop=box.scrollHeight}
+            // 每5次tick存一次，防止刷新丢失
+            tick++;if(tick%5===0)save();
           }catch(e){}
         });
       }
@@ -299,6 +302,7 @@ async function sendChat(){
       var d=await r.json();
       full=d.choices[0].message.content||'';
       c.messages[c.messages.length-1].content=full;
+      save();
     }
     
     if(lastMsg){var b2=lastMsg.querySelector('.b');if(b2)b2.innerHTML=md(full)}
@@ -388,7 +392,7 @@ function renderChat(scroll){
       var role=m.role==='user'?'user':'ai';
       return '<div class="msg '+role+'"><div class="av '+(role==='user'?'user':'ai')+'">'+(role==='user'?'👤':'🤖')+'</div><div class="b">'+
         (m.model?'<div class="model-tag">'+m.model.split('/').pop()+'</div>':'')+
-        (role==='ai'?md(m.content||''):esc(m.content).replace(/\n/g,'<br>'))+'</div></div>';
+        (role==='ai'?md(m.content||'')+(m.broken?' <span style="font-size:10px;color:var(--semi-color-warning)">⚠️ 已中断</span>':''):esc(m.content).replace(/\n/g,'<br>'))+'</div></div>';
     }).join('');
   }
   
@@ -458,7 +462,20 @@ function saveSet(){
 
 // ====== 启动 ======
 function init(){
-  if(S.convs.length>0)S.cur=S.convs[0];
+  if(S.convs.length>0){
+    S.cur=S.convs[0];
+    // 标记未完成的消息
+    S.convs.forEach(function(c){
+      var msgs=c.messages;
+      for(var i=0;i<msgs.length;i++){
+        var m=msgs[i];
+        // 上一条是user、这条是assistant、内容空或结尾为▋ -> 可能是中断的
+        if(m.role==='assistant'&&i>0&&msgs[i-1].role==='user'&&(!m.content||m.content.endsWith('▋')||m.content.trim()==='')){
+          m.broken=true;
+        }
+      }
+    });
+  }
   render();sidebar();
   if(!S.key)setTimeout(function(){toast('⚙️ 请设置 API Key','warn');openSet()},600);
   if('serviceWorker'in navigator)navigator.serviceWorker.register('web/sw.js').catch(function(){});
